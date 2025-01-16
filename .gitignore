@@ -1,0 +1,7 @@
+.env
+Module/__pycache__
+notebooks/.ipynb_checkpoints
+~$*.xlsx
+__pycache__
+Log
+debug_info.log
