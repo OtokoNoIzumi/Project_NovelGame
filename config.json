@@ -1,0 +1,79 @@
+{
+  "title": "DND跑团",
+  "file_system_role": "system_role.md",
+  "file_begin": "begin.md",
+  "file_confirm": "confirm.md",
+  "file_state_manager": "state_manager.md",
+  "state_system": {
+    "item_rules": [
+      "如果玩家获得物品，使用正数表示获得数量",
+      "如果玩家失去物品，使用负数表示失去数量",
+      "只更新确实发生变化的物品",
+      "对于没有提及数量的变化，在该方向上默认做数量为1的变化，物品变化一定会包含数量变化"
+    ],
+    "state_rules": [
+      "属性值变化需要记录具体的数值变化",
+      "生命值变化需要记录具体的损失或恢复数值",
+      "经验值变化需要记录获得的具体点数",
+      "护甲等级(AC)的变化需要记录新的数值",
+      "只更新故事中明确提到发生变化的属性",
+      "如果没有任何属性变化则返回空列表"
+    ]
+  },
+  "state_display": {
+    "template": "\n注意，下面这些信息是上一个阶段结束的状态，{state_guidance}\n当前状态\n<物品清单>\n{inventory}\n</物品清单>\n<角色状态>\n{character_state}\n</角色状态>",
+    "guidance": [
+      "请注意角色的属性值变化和战斗状态",
+      "关注生命值、经验值等数值的具体变化",
+      "留意装备和物品对护甲等级(AC)的影响",
+      "记录任何可能影响角色属性检定的状态效果",
+      "追踪角色在冒险过程中获得的经验值积累",
+      "这些状态信息体现在正文中就可以，不用另外单独列出来，影响阅读体验"
+    ]
+  },
+  "show_chat_history": true,
+  "prompt_system_role": "你是一位资深的DND跑团主持人和小说作家，熟悉DND 5E规则体系和世界观。你擅长设计引人入胜的剧情，创造生动的NPC，并能让玩家在冒险中获得成长。你会遵循DND的设定，让故事既有趣又合理。",
+  "prompt_begin": "请基于DND的世界观构思一个冒险故事。故事应包含以下要素：冒险背景、主要任务、重要NPC、可能遭遇的怪物和挑战。请先概述你的构思要点，确保故事符合DND的设定和规则。",
+  "prompt_confirm": "构思很好，让我们开始这场精彩的冒险吧！",
+  "initial_state": true,
+  "state_attributes": [
+    "力量",
+    "敏捷",
+    "体质",
+    "智力",
+    "感知",
+    "魅力",
+    "生命值",
+    "护甲等级",
+    "经验值"
+  ],
+  "response_schema": {
+    "type": "object",
+    "properties": {
+      "itemUpdates": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {"type": "string"},
+            "change_amount": {"type": "integer"}
+          },
+          "required": ["name", "change_amount"]
+        }
+      },
+      "stateUpdates": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "attribute": {"type": "string"},
+            "from_state": {"type": "integer"},
+            "to_state": {"type": "integer"}
+          },
+          "required": ["attribute", "from_state", "to_state"]
+        }
+      }
+    },
+    "required": ["itemUpdates", "stateUpdates"]
+  }
+}

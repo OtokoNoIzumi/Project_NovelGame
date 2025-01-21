@@ -5,3 +5,5 @@ notebooks/.ipynb_checkpoints
 __pycache__
 Log
 debug_info.log
+localhost+1*.pem
+local_setting/
