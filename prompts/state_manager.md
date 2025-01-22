@@ -11,14 +11,3 @@
 
 {state_rules}
 {chapter_rules}
-
-Response must be in Valid JSON format:
-{{
-    "itemUpdates": [
-        {{"name": <物品名称>, "change_amount": <变化数量>}}
-    ],
-    {chapter_schema}
-    "stateUpdates": [
-        {{"attribute": <状态属性>, "from_state": <原状态>, "to_state": <新状态>}}
-    ]
-}}
