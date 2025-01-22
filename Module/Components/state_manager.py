@@ -115,6 +115,7 @@ class StateManager:
         messages = self._format_item_changes(updates)
 
         # Format state changes
+        extra_state_attributes = self.config.get("extra_state_attributes", [])
         for state in updates.get('stateUpdates', []):
             attr = state['attribute']
             state_msg_parts = []
@@ -125,9 +126,10 @@ class StateManager:
                 state_msg_parts.append(main_state_change)
 
             # 添加额外属性变化
-            extra_changes = self._format_extra_state_changes(attr)
-            if extra_changes:
-                state_msg_parts.append(f"({', '.join(extra_changes)})")
+            if extra_state_attributes:
+                extra_changes = self._format_extra_state_changes(attr)
+                if extra_changes:
+                    state_msg_parts.append(f"({', '.join(extra_changes)})")
 
             # 添加完整的状态变化消息
             if state_msg_parts:
