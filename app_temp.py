@@ -447,10 +447,6 @@ def respond(
     # 判断是否需要附加状态信息
 
     should_append, is_control, message = _should_append_state(message)
-    print(f"should_append: {should_append}")
-    print(f"is_control: {is_control}")
-    print(f"add_extra_message: {add_extra_message}")
-    print(f"message: {message}")
 
     if (should_append) and (add_extra_message):
         message += state_manager.get_state_str()

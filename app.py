@@ -428,7 +428,8 @@ def respond(
     message: str,
     history: List[Tuple[str, str]],
     use_system_message: bool,
-    ignore_job: str
+    add_extra_message: bool,
+    ignore_job: str,
 ) -> str:
     """处理用户输入并生成响应
 
@@ -446,7 +447,8 @@ def respond(
     # 判断是否需要附加状态信息
 
     should_append, is_control, message = _should_append_state(message)
-    if should_append:
+
+    if (should_append) and (add_extra_message):
         message += state_manager.get_state_str()
 
     if message:
@@ -514,7 +516,10 @@ with gr.Blocks(theme="soft") as demo:
             type="messages",
         ),
         additional_inputs=[
+            # gr.Row([
             gr.Checkbox(value=True, label="Use system message"),
+            gr.Checkbox(value=True, label="Add Extra message"),
+            # ]),
             gr.Textbox(
                 value=settings.config.get("explored_jobs", {}).get("default", ""),
                 label="ignore job"
