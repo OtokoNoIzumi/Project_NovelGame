@@ -206,7 +206,9 @@ def game_merge_updates(base_result: Dict, extra_result: Dict) -> Dict:
     final_updates = []
 
     # 检查是否有extra属性用于比较
-    extra_state_attribute = settings.config.get("extra_state_attributes", [])[0]
+    extra_state_attributes = settings.config.get("extra_state_attributes", [])
+    extra_state_attribute = extra_state_attributes[0] if extra_state_attributes else None
+
     # 处理基础更新
     for update in base_updates:
         attr = update['attribute']
@@ -249,9 +251,6 @@ def game_merge_updates(base_result: Dict, extra_result: Dict) -> Dict:
     result = {k: v for k, v in base_result.items() if k != 'character_state'}
     result['character_state'] = final_updates
     result['extraUpdates'] = extra_result
-
-    if settings.config.get("log_level", "") == "debug":
-        log_and_print("game_merge_updates result:\n", result)
 
     return result
 
@@ -429,7 +428,8 @@ def respond(
     message: str,
     history: List[Tuple[str, str]],
     use_system_message: bool,
-    ignore_job: str
+    add_extra_message: bool,
+    ignore_job: str,
 ) -> str:
     """处理用户输入并生成响应
 
@@ -447,7 +447,12 @@ def respond(
     # 判断是否需要附加状态信息
 
     should_append, is_control, message = _should_append_state(message)
-    if should_append:
+    print(f"should_append: {should_append}")
+    print(f"is_control: {is_control}")
+    print(f"add_extra_message: {add_extra_message}")
+    print(f"message: {message}")
+
+    if (should_append) and (add_extra_message):
         message += state_manager.get_state_str()
 
     if message:
@@ -515,7 +520,10 @@ with gr.Blocks(theme="soft") as demo:
             type="messages",
         ),
         additional_inputs=[
+            # gr.Row([
             gr.Checkbox(value=True, label="Use system message"),
+            gr.Checkbox(value=True, label="Add Extra message"),
+            # ]),
             gr.Textbox(
                 value=settings.config.get("explored_jobs", {}).get("default", ""),
                 label="ignore job"
