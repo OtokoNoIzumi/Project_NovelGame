@@ -206,9 +206,7 @@ def game_merge_updates(base_result: Dict, extra_result: Dict) -> Dict:
     final_updates = []
 
     # 检查是否有extra属性用于比较
-    extra_state_attributes = settings.config.get("extra_state_attributes", [])
-    extra_state_attribute = extra_state_attributes[0] if extra_state_attributes else None
-
+    extra_state_attribute = settings.config.get("extra_state_attributes", [])[0]
     # 处理基础更新
     for update in base_updates:
         attr = update['attribute']
@@ -251,6 +249,9 @@ def game_merge_updates(base_result: Dict, extra_result: Dict) -> Dict:
     result = {k: v for k, v in base_result.items() if k != 'character_state'}
     result['character_state'] = final_updates
     result['extraUpdates'] = extra_result
+
+    if settings.config.get("log_level", "") == "debug":
+        log_and_print("game_merge_updates result:\n", result)
 
     return result
 
