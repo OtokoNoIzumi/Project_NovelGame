@@ -429,6 +429,7 @@ def respond(
     history: List[Tuple[str, str]],
     use_system_message: bool,
     add_extra_message: bool,
+    auto_analysis_state: bool,
     ignore_job: str,
 ) -> str:
     """处理用户输入并生成响应
@@ -464,7 +465,8 @@ def respond(
         })
 
         if settings.config.get("log_level", "") in ["debug", "info"]:
-            log_and_print("before main response:\n", message)
+            separator = "\n" + "="*50 + "\n"
+            log_and_print("before main response:\n", separator, message)
 
         for chunk in gemini_client.models.generate_content_stream(
             model=MODEL_NAME,
@@ -485,7 +487,7 @@ def respond(
             "idx": chat_data["current_id"]
         })
 
-        if not is_control:
+        if not is_control and auto_analysis_state:
             updates_str, _ = detect_state_changes(state_manager.get_state(), response)
             if updates_str:
                 chat_data["history"].append({
@@ -519,6 +521,7 @@ with gr.Blocks(theme="soft") as demo:
             # gr.Row([
             gr.Checkbox(value=True, label="Use system message"),
             gr.Checkbox(value=True, label="Add Extra message"),
+            gr.Checkbox(value=True, label="Auto analysis state"),
             # ]),
             gr.Textbox(
                 value=settings.config.get("explored_jobs", {}).get("default", ""),
@@ -569,6 +572,9 @@ with gr.Blocks(theme="soft") as demo:
 
 
 if __name__ == "__main__":
+    import asyncio
+    # 在程序启动前添加以下代码
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     try:
         # 尝试获取命令行参数
         import argparse
@@ -586,7 +592,8 @@ if __name__ == "__main__":
         # 在notebook中运行时使用默认值
         launch_kwargs = {
             "server_name": "0.0.0.0",
-            "share": False
+            "share": False,
+            "debug": True
         }
 
     ssl_cert = get_file_path("localhost+1.pem", current_dir=current_dir)

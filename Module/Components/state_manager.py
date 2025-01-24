@@ -72,7 +72,9 @@ class ExtraAttributeManager:
         # 检查依赖关系
         lowest_three = self.check_state_dependencies(lowest_three, attr_values)
 
-        highest_three = non_zero_values[-min(3, len(non_zero_values)):] if non_zero_values else []
+        # 过滤掉已达到100的值，并获取最高的三个
+        non_max_values = [v for v in non_zero_values if v[1] < 100]
+        highest_three = non_max_values[-min(3, len(non_max_values)):] if non_max_values else []
 
         # 构建指导信息
         guidance_parts = []
