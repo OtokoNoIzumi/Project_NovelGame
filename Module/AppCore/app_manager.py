@@ -13,17 +13,18 @@ from Module.AppCore.response_processor import ResponseProcessor
 class AppManager:
     """应用管理器类,管理应用状态和初始化"""
 
-    def __init__(self, current_dir: str = None):
+    def __init__(self, current_dir: str = None, use_local: bool = True):
         """初始化应用管理器
 
         Args:
             current_dir: 当前目录路径,如果为None则自动检测
+            use_local: 是否优先使用本地配置文件
         """
         # 初始化目录
         self.current_dir = self._init_directories(current_dir)
 
         # 加载配置
-        self.settings = Settings(current_dir=self.current_dir)
+        self.settings = Settings(current_dir=self.current_dir, use_local=use_local)
 
         # 初始化LLM客户端
         self.model_name = "gemini-2.0-flash-exp"
@@ -110,41 +111,29 @@ class AppManager:
         self.state_manager.reset_state()
         return self.update_state()
 
-    def get_launch_kwargs(self) -> Dict[str, Any]:
-        """获取启动参数"""
-        try:
-            # 尝试获取命令行参数
-            import argparse
-            parser = argparse.ArgumentParser()
-            parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
-            parser.add_argument("--port", type=int, default=7860, help="Port to bind to")
-            parser.add_argument("--share", action="store_true", help="Enable sharing")
-            args = parser.parse_args()
-            launch_kwargs = {
-                "server_name": args.host,
-                "server_port": args.port,
-                "share": args.share
-            }
-        except:
-            # 在notebook中运行时使用默认值
-            launch_kwargs = {
-                "server_name": "0.0.0.0",
-                "share": False,
-                "debug": True
-            }
+    def get_launch_kwargs(self, launch_kwargs: dict = None) -> Dict[str, Any]:
+        """获取增强后的启动参数"""
+        base_kwargs = {
+            "server_name": "0.0.0.0",
+            "server_port": 7860,
+            "share": False,
+            "debug": True
+        }
 
-        # 添加SSL配置
-        # 关键修复：当启用share时自动禁用本地SSL
-        if not launch_kwargs.get("share"):
+        # 合并传入参数
+        if launch_kwargs:
+            base_kwargs.update(launch_kwargs)
+
+        # SSL处理逻辑保持不变
+        if not base_kwargs.get("share"):
             ssl_cert = get_file_path("localhost+1.pem", current_dir=self.current_dir)
             ssl_key = get_file_path("localhost+1-key.pem", current_dir=self.current_dir)
-
             if os.path.exists(ssl_cert) and os.path.exists(ssl_key):
-                launch_kwargs.update({
+                base_kwargs.update({
                     "ssl_certfile": ssl_cert,
                     "ssl_keyfile": ssl_key
                 })
-        else:
-            print("SSL证书已禁用（Share模式使用ngrok的自动HTTPS）")
+            else:
+                print("SSL证书已禁用（Share模式使用ngrok的自动HTTPS）")
 
-        return launch_kwargs
+        return base_kwargs

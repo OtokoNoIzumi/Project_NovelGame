@@ -73,6 +73,13 @@ class UIManager:
         ignore_job: str,
     ) -> Generator[str, None, None]:
         """处理用户输入并生成响应"""
+
+        if self.app_manager.settings.config.get("enable_safe_check", False):
+            safe_check = self.app_manager.response_processor.safe_check(message)
+            if not safe_check:
+                yield "抱歉，内容包含不当内容，无法支持。"
+                return
+
         # 预处理
         message, is_control = self.app_manager.response_processor.pre_process(
             message,
@@ -111,9 +118,11 @@ class UIManager:
             )
             yield final_response
 
-    def launch(self) -> None:
+    def launch(self, **launch_kwargs) -> None:
         """启动Gradio界面"""
         if self.demo is None:
             self.create_interface()
 
-        self.demo.launch(**self.app_manager.get_launch_kwargs())
+        # 合并默认参数和传入参数
+        final_kwargs = self.app_manager.get_launch_kwargs(launch_kwargs)
+        self.demo.launch(**final_kwargs)

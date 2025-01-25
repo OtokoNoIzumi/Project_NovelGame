@@ -28,7 +28,9 @@ class ResponseProcessor:
         self.model_name = model_name
         self.settings = settings
         self.chat_data = chat_data
-
+        self.safety_settings = get_safety_settings()
+        for detail_safety_settings in self.safety_settings:
+            detail_safety_settings.threshold = self.settings.config.get("safety_settings", "OFF")
         # 初始化分析器
         self.analyzer = ContentAnalyzer(
             llm_client=self.llm_client,
@@ -44,6 +46,18 @@ class ResponseProcessor:
             extra_response_formatter=self._game_extra_response_formatter,
             merge_updates=self._game_merge_updates
         )
+
+    def safe_check(self, message: str) -> bool:
+        """安全检查"""
+        format_msg = self.settings.config.get("prompt_safe_check", "检查{user_message}").format(user_message=message)
+        response = self.llm_client.models.generate_content(
+            model=self.model_name,
+            contents=[format_msg],
+        )
+        cleaned_text = response.text.strip().replace('\n', '')
+        if cleaned_text == "安全":
+            return True
+        return False
 
     def pre_process(
         self,
@@ -80,13 +94,6 @@ class ResponseProcessor:
         contents = self._build_contents(message)
         config = get_content_config(use_system_message, self.settings.system_role)
 
-        # 更新对话历史
-        self.chat_data["current_id"] += 1
-        self.chat_data["history"].append({
-            "role": "user",
-            "content": message,
-            "idx": self.chat_data["current_id"]
-        })
 
         # 调试日志
         if self.settings.config.get("log_level", "") in ["debug", "info"]:
@@ -108,11 +115,19 @@ class ResponseProcessor:
                 break
 
         # 更新对话历史
-        self.chat_data["history"].append({
-            "role": "assistant",
-            "content": response,
-            "idx": self.chat_data["current_id"]
-        })
+        if response:
+            # 更新对话历史
+            self.chat_data["current_id"] += 1
+            self.chat_data["history"].append({
+                "role": "user",
+                "content": message,
+                "idx": self.chat_data["current_id"]
+            })
+            self.chat_data["history"].append({
+                "role": "assistant",
+                "content": response,
+                "idx": self.chat_data["current_id"]
+            })
         # 记录最终响应日志（新增部分）
         if self.settings.config.get("log_level", "") in ["debug", "info"]:
             separator = "\n" + "="*30 + "RESPONSE START" + "="*30 + "\n"
@@ -261,7 +276,7 @@ class ResponseProcessor:
                 system_instruction=system_prompt,
                 response_mime_type="application/json",
                 response_schema=response_schema,
-                safety_settings=get_safety_settings(),
+                safety_settings=self.safety_settings,
             ),
         )
 
@@ -315,6 +330,8 @@ class ResponseProcessor:
         # Debug日志
         if self.settings.config.get("log_level", "") == "debug":
             log_and_print("game_context_formatter:\n", formatted_content + "【最近故事内容】\n")
+        else:
+            log_and_print("game_context_formatter: log_level is not debug")
 
         # 返回带故事内容的完整格式
         return formatted_content + f"""
