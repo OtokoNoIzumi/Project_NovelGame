@@ -30,23 +30,15 @@ class AppManager:
         self.model_name = "gemini-2.0-flash-exp"
         self.llm_client = genai.Client(api_key=self.settings.api_key)
 
-        # 初始化状态
-        self.game_state = self._create_initial_state()
+        # 初始化状态管理器
         self.state_manager = StateManager(self._create_initial_state(), self.settings.config)
-
-        # 初始化聊天数据
-        self.chat_data = {
-            "current_id": 0,
-            "history": []
-        }
 
         # 初始化响应处理器
         self.response_processor = ResponseProcessor(
             state_manager=self.state_manager,
             llm_client=self.llm_client,
             model_name=self.model_name,
-            settings=self.settings,
-            chat_data=self.chat_data
+            settings=self.settings
         )
 
     def _init_directories(self, current_dir: str = None) -> str:
@@ -86,30 +78,47 @@ class AppManager:
 
         return initial_state
 
-    def update_state(self) -> List[Any]:
+    def create_initial_chat_data(self) -> Dict:
+        """创建初始聊天数据"""
+        return {
+            "current_id": 0,
+            "history": []
+        }
+
+    def update_state(self, state: Dict, chat_data: Dict) -> List[Any]:
         """更新状态"""
-        return ([self.state_manager.get_state(), self.chat_data["history"]]
+        # 更新状态管理器中的状态
+        self.state_manager.state = state
+        return ([state, chat_data["history"]]
                 if self.settings.config["show_chat_history"]
-                else self.state_manager.get_state())
+                else state)
 
-    def clear_state(self) -> List[Any]:
+    def clear_state(self, state: Dict, chat_data: Dict) -> List[Any]:
         """清除状态"""
-        self.chat_data['current_id'] = 0
-        self.chat_data['history'] = []
-        self.state_manager.state = self._create_initial_state()
+        chat_data['current_id'] = 0
+        chat_data['history'] = []
+        state.clear()
+        state.update(self._create_initial_state())
+        # 更新状态管理器中的状态
+        self.state_manager.state = state
         self.state_manager.state_history = self._create_initial_state()
-        return self.update_state()
+        return self.update_state(state, chat_data)
 
-    def undo_state(self) -> List[Any]:
+    def undo_state(self, state: Dict, chat_data: Dict) -> List[Any]:
         """撤销状态"""
-        if self.chat_data["current_id"] > 0:
-            self.chat_data["history"] = [
-                msg for msg in self.chat_data["history"]
-                if msg["idx"] != self.chat_data["current_id"]
+        if chat_data["current_id"] > 0:
+            chat_data["history"] = [
+                msg for msg in chat_data["history"]
+                if msg["idx"] != chat_data["current_id"]
             ]
-            self.chat_data["current_id"] -= 1
-        self.state_manager.reset_state()
-        return self.update_state()
+            chat_data["current_id"] -= 1
+
+        # 重置状态到初始状态
+        state.clear()
+        state.update(self._create_initial_state())
+        # 更新状态管理器中的状态
+        self.state_manager.state = state
+        return self.update_state(state, chat_data)
 
     def get_launch_kwargs(self, launch_kwargs: dict = None) -> Dict[str, Any]:
         """获取增强后的启动参数"""

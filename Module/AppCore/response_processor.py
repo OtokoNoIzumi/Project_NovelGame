@@ -21,13 +21,11 @@ class ResponseProcessor:
         llm_client: Any,
         model_name: str,
         settings: Any,
-        chat_data: Dict[str, Any]
     ):
         self.state_manager = state_manager
         self.llm_client = llm_client
         self.model_name = model_name
         self.settings = settings
-        self.chat_data = chat_data
         self.safety_settings = get_safety_settings()
         for detail_safety_settings in self.safety_settings:
             detail_safety_settings.threshold = self.settings.config.get("safety_settings", "OFF")
@@ -64,14 +62,16 @@ class ResponseProcessor:
         message: str,
         history: List[Tuple[str, str]],
         add_extra_message: bool,
-        ignore_job: str
+        ignore_job: str,
+        state: Dict,
+        chat_data: Dict
     ) -> Tuple[str, bool]:
         """预处理阶段,处理消息和状态"""
         # 处理特殊消息
         message = self._handle_special_messages(message, history, ignore_job)
 
         # 判断是否需要附加状态
-        should_append, is_control, message = self._should_append_state(message)
+        should_append, is_control, message = self._should_append_state(message, state, chat_data)
 
         # 附加状态信息
         if should_append and add_extra_message:
@@ -82,18 +82,18 @@ class ResponseProcessor:
     def main_process(
         self,
         message: str,
-        use_system_message: bool
+        use_system_message: bool,
+        state: Dict,
+        chat_data: Dict
     ) -> Generator[str, None, None]:
         """主处理阶段,调用LLM并处理响应"""
-
         if not message:
             print("DEBUG-RP-102: Empty message, returning")
             return
 
         # 构建内容和配置
-        contents = self._build_contents(message)
+        contents = self._build_contents(message, chat_data=chat_data)
         config = get_content_config(use_system_message, self.settings.system_role)
-
 
         # 调试日志
         if self.settings.config.get("log_level", "") in ["debug", "info"]:
@@ -109,7 +109,7 @@ class ResponseProcessor:
             config=config
         ):
             last_chunk = chunk  # 保存最后一个 chunk
-            response, should_break = self._process_response(chunk, response)
+            response, should_break = self._process_response(chunk, response, chat_data)
             yield response
             if should_break:
                 break
@@ -117,17 +117,18 @@ class ResponseProcessor:
         # 更新对话历史
         if response:
             # 更新对话历史
-            self.chat_data["current_id"] += 1
-            self.chat_data["history"].append({
+            chat_data["current_id"] += 1
+            chat_data["history"].append({
                 "role": "user",
                 "content": message,
-                "idx": self.chat_data["current_id"]
+                "idx": chat_data["current_id"]
             })
-            self.chat_data["history"].append({
+            chat_data["history"].append({
                 "role": "assistant",
                 "content": response,
-                "idx": self.chat_data["current_id"]
+                "idx": chat_data["current_id"]
             })
+
         # 记录最终响应日志（新增部分）
         if self.settings.config.get("log_level", "") in ["debug", "info"]:
             separator = "\n" + "="*30 + "RESPONSE START" + "="*30 + "\n"
@@ -159,18 +160,20 @@ class ResponseProcessor:
         self,
         response: str,
         is_control: bool,
-        auto_analysis_state: bool
+        auto_analysis_state: bool,
+        state: Dict,
+        chat_data: Dict
     ) -> str:
         """后处理阶段,处理状态变化"""
         if not is_control and auto_analysis_state:
-            updates = self.analyzer.analyze(self.state_manager.get_state(), response)
+            updates = self.analyzer.analyze(state, response)
             updates_str, _ = self.state_manager.apply_updates(updates)
             if updates_str:
-                self.chat_data["history"].append({
+                chat_data["history"].append({
                     "role": "assistant",
                     "content": updates_str,
                     "only_for_display": True,
-                    "idx": self.chat_data["current_id"]
+                    "idx": chat_data["current_id"]
                 })
                 # 根据响应内容格式化状态更新
                 if "状态变化：" in response:
@@ -209,20 +212,30 @@ class ResponseProcessor:
 
         return message
 
-    def _should_append_state(self, message: str) -> Tuple[bool, bool, str]:
+    def _should_append_state(
+        self,
+        message: str,
+        state: Dict,
+        chat_data: Dict
+    ) -> Tuple[bool, bool, str]:
         """判断是否需要附加状态信息"""
         is_control = message.startswith('ct')
         processed_message = message[2:].strip() if is_control else message
 
         should_append = False if is_control else (
-            self.state_manager.state["story_chapter_stage"] > 1 or
-            self.state_manager.state["story_chapter"] != "起因" or
-            self.chat_data["current_id"] > 1
+            state["story_chapter_stage"] > 1 or
+            state["story_chapter"] != "起因" or
+            chat_data["current_id"] > 1
         )
 
         return should_append, is_control, processed_message
 
-    def _process_response(self, chunk: Any, response: str) -> Tuple[str, bool]:
+    def _process_response(
+        self,
+        chunk: Any,
+        response: str,
+        chat_data: Dict
+    ) -> Tuple[str, bool]:
         """处理响应块，返回更新的响应和是否需要中断"""
         if not chunk.text:
             return response, False
@@ -231,22 +244,28 @@ class ResponseProcessor:
             response += chunk.text.split("状态变化：")[0]
             return response, True
 
-        if ("【情节完成】" in chunk.text) and (self.chat_data["current_id"] > 1):
+        if ("【情节完成】" in chunk.text) and (chat_data["current_id"] > 1):
             response += chunk.text.split("【情节完成】")[0] + "【情节完成】"
             return response, True
 
         return response + chunk.text, False
 
-    def _build_contents(self, message: str = None, before_message: str = None) -> List[Dict]:
+    def _build_contents(
+        self,
+        message: str = None,
+        before_message: str = None,
+        chat_data: Dict = None
+    ) -> List[Dict]:
         """构建内容列表"""
         contents = []
-        for val in self.chat_data["history"]:
-            if val.get("only_for_display", False):
-                continue
-            contents.append(format_content(
-                val["role"],
-                val["content"]
-            ))
+        if chat_data:
+            for val in chat_data["history"]:
+                if val.get("only_for_display", False):
+                    continue
+                contents.append(format_content(
+                    val["role"],
+                    val["content"]
+                ))
 
         if before_message:
             contents.append(format_content(
@@ -362,7 +381,7 @@ class ResponseProcessor:
         for update in base_result.get('stateUpdates', []):
             attr = update['attribute']
             current_state = current_data.get('character_state', {}).get(attr, {})
-            if update['to_state'] != current_state.get('state', ''):
+            if (update['to_state'] != current_state.get('state', '')) and (update['to_state'] != update['from_state']):
                 changes.extend([
                     f"属性：{attr}",
                     f"初始状态：{current_state.get('state', '')}",
@@ -381,7 +400,7 @@ class ResponseProcessor:
             result = "\n".join(guidance) + "\n" + "\n".join(changes)
 
         if self.settings.config.get("log_level", "") == "debug":
-            log_and_print("game_extra_context_formatter:\n", result, "\n id:", self.chat_data.get('current_id', 0))
+            log_and_print("game_extra_context_formatter:\n", result)
 
         return result
 

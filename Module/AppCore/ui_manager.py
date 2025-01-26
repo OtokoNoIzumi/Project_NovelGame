@@ -19,6 +19,10 @@ class UIManager:
     def create_interface(self) -> gr.Blocks:
         """创建Gradio界面"""
         with gr.Blocks(theme="soft") as demo:
+            # 创建会话级状态
+            session_state = gr.State(self.app_manager._create_initial_state())
+            session_chat_data = gr.State(self.app_manager.create_initial_chat_data())
+
             # 1. 创建界面组件
             chatbot = gr.ChatInterface(
                 self.respond,
@@ -40,28 +44,70 @@ class UIManager:
                         value=self.app_manager.settings.config.get("explored_jobs", {}).get("default", ""),
                         label="ignore job"
                     ),
+                    session_state,  # 添加会话状态作为隐藏输入
+                    session_chat_data,  # 添加聊天数据作为隐藏输入
                 ],
             )
 
             # 2. 创建状态显示组件
             outputs = []
             with gr.Accordion("查看故事状态", open=False):
-                state_output = gr.JSON(value=self.app_manager.state_manager.get_state())
+                state_output = gr.JSON(value=self.app_manager._create_initial_state())
                 outputs.append(state_output)
 
             if self.app_manager.settings.config["show_chat_history"]:
                 with gr.Accordion("查看历史对话", open=False):
-                    history_output = gr.JSON(value=self.app_manager.chat_data["history"])
+                    history_output = gr.JSON(value=[])
                     outputs.append(history_output)
 
             # 3. 绑定事件处理
-            chatbot.chatbot.change(fn=self.app_manager.update_state, outputs=outputs)
-            chatbot.chatbot.clear(fn=self.app_manager.clear_state, outputs=outputs)
-            chatbot.chatbot.undo(fn=self.app_manager.undo_state, outputs=outputs)
-            chatbot.chatbot.retry(fn=self.app_manager.undo_state, outputs=outputs)
+            chatbot.chatbot.change(
+                fn=self.update_state,
+                inputs=[session_state, session_chat_data],
+                outputs=[*outputs, session_state, session_chat_data]
+            )
+            chatbot.chatbot.clear(
+                fn=self.clear_state,
+                inputs=[session_state, session_chat_data],
+                outputs=[*outputs, session_state, session_chat_data]
+            )
+            chatbot.chatbot.undo(
+                fn=self.undo_state,
+                inputs=[session_state, session_chat_data],
+                outputs=[*outputs, session_state, session_chat_data]
+            )
+            chatbot.chatbot.retry(
+                fn=self.undo_state,
+                inputs=[session_state, session_chat_data],
+                outputs=[*outputs, session_state, session_chat_data]
+            )
 
             self.demo = demo
             return demo
+
+    def update_state(self, session_state: Dict, session_chat_data: Dict) -> tuple:
+        """更新会话状态"""
+        outputs = self.app_manager.update_state(
+            state=session_state,
+            chat_data=session_chat_data
+        )
+        return (*outputs, session_state, session_chat_data)
+
+    def clear_state(self, session_state: Dict, session_chat_data: Dict) -> tuple:
+        """清除会话状态"""
+        outputs = self.app_manager.clear_state(
+            state=session_state,
+            chat_data=session_chat_data
+        )
+        return (*outputs, session_state, session_chat_data)
+
+    def undo_state(self, session_state: Dict, session_chat_data: Dict) -> tuple:
+        """撤销会话状态"""
+        outputs = self.app_manager.undo_state(
+            state=session_state,
+            chat_data=session_chat_data
+        )
+        return (*outputs, session_state, session_chat_data)
 
     def respond(
         self,
@@ -71,6 +117,8 @@ class UIManager:
         add_extra_message: bool,
         auto_analysis_state: bool,
         ignore_job: str,
+        session_state: Dict,
+        session_chat_data: Dict,
     ) -> Generator[str, None, None]:
         """处理用户输入并生成响应"""
 
@@ -85,7 +133,9 @@ class UIManager:
             message,
             history,
             add_extra_message,
-            ignore_job
+            ignore_job,
+            state=session_state,
+            chat_data=session_chat_data
         )
 
         # 主处理 - 流式输出LLM响应
@@ -93,7 +143,9 @@ class UIManager:
         got_content = False
         for chunk in self.app_manager.response_processor.main_process(
             message,
-            use_system_message
+            use_system_message,
+            state=session_state,
+            chat_data=session_chat_data
         ):
             if not chunk:  # 如果是空响应
                 if not got_content:  # 如果还没有收到过内容
@@ -114,7 +166,9 @@ class UIManager:
             final_response = self.app_manager.response_processor.post_process(
                 final_response,
                 is_control,
-                auto_analysis_state
+                auto_analysis_state,
+                state=session_state,
+                chat_data=session_chat_data
             )
             yield final_response
 
