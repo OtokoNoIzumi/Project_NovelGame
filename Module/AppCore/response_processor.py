@@ -497,7 +497,7 @@ class ResponseProcessor:
             update_chains[attr].append({
                 'base_index': idx,
                 'from_state': update.get('from_state'),
-                'state': update.get('to_state'),
+                'to_state': update.get('to_state'),
                 'group_index': len(update_chains[attr]),  # 当前属性出现的次数作为分组索引
             })
 
@@ -530,21 +530,11 @@ class ResponseProcessor:
                 )
             )
             final_update = base_updates[selected_group['base_index']].copy()
-            final_update['state'] = final_update.pop('to_state', None)
 
             for extra in extra_updates:
                 if (attr == extra['attribute']) and (extra['_group_index'] == selected_group['group_index']):
                     used_extra_updates.append(extra)  # 记录实际使用的额外更新
             final_updates.append(final_update)
-
-        # # 按原始顺序保留唯一属性（但值来自最终选择）
-        # seen_attrs = set()
-        # deduped_updates = []
-        # for update in reversed(final_updates):  # 反向遍历保留最后出现的
-        #     if update['attribute'] not in seen_attrs:
-        #         deduped_updates.append(update)
-        #         seen_attrs.add(update['attribute'])
-        # deduped_updates.reverse()  # 恢复原始顺序
 
         deduped_updates_dict: Dict[str, Dict[str, Any]] = {}
         for update in final_updates:

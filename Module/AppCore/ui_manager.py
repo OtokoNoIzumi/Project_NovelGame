@@ -38,6 +38,7 @@ class UIManager:
                 ),
                 textbox=gr.Textbox(value=session_input_text.value, submit_btn=True, stop_btn=True),
                 title=self.app_manager.settings.config["title"],
+                # api_name="novel",
                 additional_inputs=[
                     gr.Checkbox(value=True, label="Use system message"),
                     gr.Checkbox(value=True, label="Add Extra message"),

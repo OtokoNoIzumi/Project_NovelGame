@@ -236,7 +236,7 @@ class StateManager:
         self._update_character_state(
             character_state,
             updates.get('character_state', []),
-            updates.get('extraUpdates', [])  # 新增参数
+            updates.get('extraUpdates', {})  # 新增参数
         )
 
         self.state['inventory'] = inventory
@@ -267,7 +267,7 @@ class StateManager:
     def _format_main_state_change(self, state: Dict) -> Optional[str]:
         """格式化主状态变化信息"""
         from_state = state.get('from_state')
-        to_state = state['state']
+        to_state = state['to_state']
 
         if from_state == to_state:
             return None
@@ -352,11 +352,10 @@ class StateManager:
             if inventory[name] <= 0:
                 del inventory[name]
 
-    def _update_character_state(self, character_state: Dict, updates: List[Dict], extra_updates: List[Dict] = None):
+    def _update_character_state(self, character_state: Dict, updates: List[Dict], extra_updates: Dict = None):
         """更新角色状态"""
         if updates:
             self.extra_attr_manager.clear_changes()
-
             # 检查是否有extra属性用于比较
             if extra_updates:
                 extra_state_attributes = self.config.get("extra_state_attributes", [])
@@ -364,7 +363,7 @@ class StateManager:
 
             for state in updates:
                 attr = state['attribute']
-                to_state = state['state']
+                to_state = state['to_state']
 
                 # 确保属性存在
                 if attr not in character_state:

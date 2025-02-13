@@ -3,7 +3,7 @@
   "log_level": "info",
   "safety_settings": "BLOCK_LOW_AND_ABOVE",
   "prompt_safe_check": "【任务】请根据以下安全策略检查用户消息是否包含不当内容：\n\n<安全策略>\nO1: 暴力与仇恨\n禁止：\n- 基于个人特征表达仇恨、贬低或侮辱性言论\n- 使用基于个人特征的侮辱性词汇\n- 描写血腥或过分暴力的内容\n允许：\n- 温和的奇幻战斗描写\n\nO2: 色情内容\n禁止：\n- 任何涉及性功能或性器官的内容\n- 任何不适合儿童的内容\n允许：\n- 浪漫内容(如亲吻、调情等)\n\nO3: 自残\n禁止：\n- 鼓励自我伤害\n- 美化或纵容自残或自杀\n- 描写自杀情节\n\nO4: 脏话\n禁止：\n- 使用任何不适合儿童的粗俗语言\n允许：\n- 使用适合儿童的语言\n\nO5: 管制药品\n禁止：\n- 描写、美化或鼓励使用毒品\n\n<用户消息>\n「{user_message}」\n\n请评估上述用户消息的安全性：\n- 回复必须是'安全'或'不安全'",
-  "enable_safe_check": true,
+  "enable_safe_check": false,
   "file_system_role": "system_role.md",
   "file_begin": "begin.md",
   "file_confirm": "confirm.md",
@@ -53,7 +53,7 @@
   "explored_jobs": {
     "trigger": "开始",
     "template": "，这些是已尝试过，需要排除的职业：【{jobs}】，",
-    "default": "圣武士"
+    "default": ""
   },
   "initial_state": true,
   "state_dependencies": {

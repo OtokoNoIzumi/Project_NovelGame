@@ -113,11 +113,10 @@ class AppManager:
             ]
             chat_data["current_id"] -= 1
 
-        # 重置状态到初始状态
-        state.clear()
-        state.update(self._create_initial_state())
+        # 重置状态到上一个状态
+        self.state_manager.reset_state()
         # 更新状态管理器中的状态
-        self.state_manager.state = state
+        state = self.state_manager.state
         return self.update_state(state, chat_data)
 
     def get_launch_kwargs(self, launch_kwargs: dict = None) -> Dict[str, Any]:
