@@ -22,11 +22,11 @@ class UIManager:
             # 创建会话级状态
             session_state = gr.State(self.app_manager._create_initial_state())
             session_chat_data = gr.State(self.app_manager.create_initial_chat_data())
+            session_input_text = gr.State("开始")
 
             # 1. 创建界面组件
             chatbot = gr.ChatInterface(
                 self.respond,
-                title=self.app_manager.settings.config["title"],
                 type="messages",
                 chatbot=gr.Chatbot(
                     placeholder="输入 【开始】 开始进行创作",
@@ -36,6 +36,8 @@ class UIManager:
                     show_copy_all_button=True,
                     type="messages",
                 ),
+                textbox=gr.Textbox(value=session_input_text.value, submit_btn=True, stop_btn=True),
+                title=self.app_manager.settings.config["title"],
                 additional_inputs=[
                     gr.Checkbox(value=True, label="Use system message"),
                     gr.Checkbox(value=True, label="Add Extra message"),

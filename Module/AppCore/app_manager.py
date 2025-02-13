@@ -13,7 +13,7 @@ from Module.AppCore.response_processor import ResponseProcessor
 class AppManager:
     """应用管理器类,管理应用状态和初始化"""
 
-    def __init__(self, current_dir: str = None, use_local: bool = True):
+    def __init__(self, current_dir: str = None, use_local: bool = True, model_name: str = "gemini-2.0-flash-001"):
         """初始化应用管理器
 
         Args:
@@ -27,7 +27,7 @@ class AppManager:
         self.settings = Settings(current_dir=self.current_dir, use_local=use_local)
 
         # 初始化LLM客户端
-        self.model_name = "gemini-2.0-flash-exp"
+        self.model_name = model_name
         self.llm_client = genai.Client(api_key=self.settings.api_key)
 
         # 初始化状态管理器

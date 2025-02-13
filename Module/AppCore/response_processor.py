@@ -29,6 +29,10 @@ class ResponseProcessor:
         self.safety_settings = get_safety_settings()
         for detail_safety_settings in self.safety_settings:
             detail_safety_settings.threshold = self.settings.config.get("safety_settings", "OFF")
+
+        self.extra_schema = self.settings.config.get('extra_value_evaluation', {}).get('schema')
+        self.extra_prompt = self.settings.config.get('extra_value_evaluation', {}).get('system_role')
+        enable_extra = self.extra_schema and self.extra_prompt
         # 初始化分析器
         self.analyzer = ContentAnalyzer(
             llm_client=self.llm_client,
@@ -37,12 +41,8 @@ class ResponseProcessor:
             system_prompt=self.settings.state_system_prompt,
             context_formatter=self._game_context_formatter,
             response_formatter=self._game_response_formatter,
-            # 额外评估配置
-            extra_schema=self.settings.config.get('extra_value_evaluation', {}).get('schema'),
-            extra_prompt=self.settings.config.get('extra_value_evaluation', {}).get('system_role'),
-            extra_context_formatter=self._game_extra_context_formatter,
-            extra_response_formatter=self._game_extra_response_formatter,
-            merge_updates=self._game_merge_updates
+            post_process=self.extra_post_process,
+            enable_extra=enable_extra,
         )
 
     def safe_check(self, message: str) -> bool:
@@ -94,6 +94,9 @@ class ResponseProcessor:
         # 构建内容和配置
         contents = self._build_contents(message, chat_data=chat_data)
         config = get_content_config(use_system_message, self.settings.system_role)
+        config.temperature=self.settings.config.get("generate_config_temperature", 1)
+        config.frequency_penalty=self.settings.config.get("generate_config_frequency_penalty", 1)
+        config.presence_penalty=self.settings.config.get("generate_config_presence_penalty", 1)
 
         # 调试日志
         if self.settings.config.get("log_level", "") in ["debug", "info"]:
@@ -359,6 +362,79 @@ class ResponseProcessor:
 【最近故事内容】
 """
 
+    def extra_post_process(self, result: Dict, current_data: Dict) -> Dict:
+        """额外属性后处理"""
+        filtered_result = {
+            **result,
+            'character_state': [update for update in result.get('character_state', [])
+                            if update.get('to_state') != '暂无']
+        }
+
+        state_updates = filtered_result['character_state']
+        update_groups = self._group_updates_by_order(state_updates)
+
+        extra_results = []
+        # 对每个分组分别进行额外属性评估
+        for group_idx, group in enumerate(update_groups):
+        # for group in update_groups:
+            extra_context = self._game_extra_context_formatter(group, current_data)
+            if extra_context:
+                extra_response = self._gemini_generate_with_schema(
+                    self.llm_client,
+                    extra_context,
+                    self.extra_schema,
+                    self.extra_prompt,
+                )
+                extra_result = self._game_extra_response_formatter(extra_response)
+                for item in extra_result.get('stateUpdates', []):
+                    item['_group_index'] = group_idx  # 添加分组标记
+                extra_results.extend(extra_result.get('stateUpdates', []))
+
+        # 合并所有额外属性更新, 主要实现根据extra的值和位置去重
+        result = self._game_merge_updates(
+            filtered_result,
+            {'stateUpdates': extra_results},
+            current_data
+        )
+        return result
+
+    def _group_updates_by_order(self, updates: List[Dict]) -> List[Dict]:
+        """按出现顺序将更新分组
+
+        返回：[
+            {  # 第一组：所有属性的第一次出现
+                'stateUpdates': [
+                    {'attribute': 'A', ...},
+                    {'attribute': 'B', ...},
+                    {'attribute': 'C', ...}
+                ]
+            },
+            {  # 第二组：第二次出现的属性
+                'stateUpdates': [
+                    {'attribute': 'B', ...}
+                ]
+            },
+            # ... 可能有更多组
+        ]
+        """
+        seen_attrs = {}  # 记录每个属性出现的次数
+        groups = []  # 动态增长的分组列表
+
+        for update in updates:
+            attr = update['attribute']
+            count = seen_attrs.get(attr, 0)
+
+            # 确保有足够的分组
+            while len(groups) <= count:
+                groups.append({'stateUpdates': []})
+
+            # 将更新添加到对应的分组
+            groups[count]['stateUpdates'].append(update)
+            seen_attrs[attr] = count + 1
+
+        # 移除空组（如果有的话）
+        return [group for group in groups if group['stateUpdates']]
+
     def _game_extra_response_formatter(self, response: Any) -> Dict[str, Any]:
         """格式化额外属性响应"""
         if self.settings.config.get("log_level", "") == "debug":
@@ -404,63 +480,87 @@ class ResponseProcessor:
 
         return result
 
-    def _game_merge_updates(self, base_result: Dict, extra_result: Dict) -> Dict:
-        """游戏特定的更新合并策略"""
+    def _game_merge_updates(self, base_result: Dict, extra_result: Dict, current_data: Dict) -> Dict:
+        """增强版游戏属性合并策略"""
         base_updates = base_result.get('character_state', [])
         extra_updates = extra_result.get('stateUpdates', [])
+        extra_attr = self.settings.config.get("extra_state_attributes", [])[0]
+        current_states = current_data.get('character_state', {})
+        used_extra_updates = []  # 记录实际使用的额外更新
 
-        # 记录每个属性首次出现的位置和更新
-        seen_attrs = {}
-        final_updates = []
-
-        # 检查是否有extra属性用于比较
-        extra_state_attributes = self.settings.config.get("extra_state_attributes", [])
-        extra_state_attribute = extra_state_attributes[0] if extra_state_attributes else None
-
-        # 处理基础更新
-        for update in base_updates:
+        # 构建属性更新链（记录所有历史版本）
+        update_chains = {}
+        for idx, update in enumerate(base_updates):
             attr = update['attribute']
-            # 标准化更新数据格式
-            normalized_update = {
-                'attribute': attr,
+            if attr not in update_chains:
+                update_chains[attr] = []
+            update_chains[attr].append({
+                'base_index': idx,
                 'from_state': update.get('from_state'),
-                'state': update.get('to_state'),  # 统一使用 state 作为键名
-                **{k: v for k, v in update.items() if k not in ['attribute', 'from_state', 'to_state', 'state']}
-            }
+                'state': update.get('to_state'),
+                'group_index': len(update_chains[attr]),  # 当前属性出现的次数作为分组索引
+            })
 
-            if attr in seen_attrs:
-                prev_idx = seen_attrs[attr]
-                prev_update = final_updates[prev_idx]
-
-                if (extra_state_attribute in update and
-                    extra_state_attribute in prev_update):
-                    # 如果新的extra值更大，则替换旧的更新
-                    if update[extra_state_attribute] > prev_update[extra_state_attribute]:
-                        final_updates[prev_idx] = normalized_update
-                else:
-                    # 没有extra属性时保留后出现的更新
-                    final_updates[prev_idx] = normalized_update
-            else:
-                seen_attrs[attr] = len(final_updates)
-                final_updates.append(normalized_update)
-
-        # 处理额外属性更新
+        # 处理带分组标记的额外属性更新
         for extra in extra_updates:
             attr = extra['attribute']
-            if attr in seen_attrs:
-                idx = seen_attrs[attr]
-                # 将额外属性合并到对应的更新中
-                final_updates[idx].update({
-                    k: v for k, v in extra.items()
-                    if k != 'attribute'
-                })
+            group_idx = extra.get('_group_index', 0)
 
-        # 构建最终结果
-        result = {k: v for k, v in base_result.items() if k != 'character_state'}
-        result['character_state'] = final_updates
-        result['extraUpdates'] = extra_result
+            # 找到对应分组的base更新
+            if attr in update_chains and group_idx < len(update_chains[attr]):
+                target_group = update_chains[attr][group_idx]
+                base_update = base_updates[target_group['base_index']]
 
-        return result
+                # 合并额外属性（保留原始值优先级）
+                current_value = current_states.get(attr, {}).get(extra_attr, 0)
+                new_value = extra.get(extra_attr, 0)
+                if new_value > current_value:
+                    base_update[extra_attr] = new_value
+                    base_update['group_index'] = group_idx
+
+        # 生成最终更新列表（应用业务规则）
+        final_updates = []
+        for attr, groups in update_chains.items():
+            # 按业务规则选择最终值：最高extra值，相同则选最后出现的
+            selected_group = max(
+                groups,
+                key=lambda x: (
+                    x.get(extra_attr, 0),
+                    x['group_index']  # 相同值时选择最后出现的
+                )
+            )
+            final_update = base_updates[selected_group['base_index']].copy()
+            final_update['state'] = final_update.pop('to_state', None)
+
+            for extra in extra_updates:
+                if (attr == extra['attribute']) and (extra['_group_index'] == selected_group['group_index']):
+                    used_extra_updates.append(extra)  # 记录实际使用的额外更新
+            final_updates.append(final_update)
+
+        # # 按原始顺序保留唯一属性（但值来自最终选择）
+        # seen_attrs = set()
+        # deduped_updates = []
+        # for update in reversed(final_updates):  # 反向遍历保留最后出现的
+        #     if update['attribute'] not in seen_attrs:
+        #         deduped_updates.append(update)
+        #         seen_attrs.add(update['attribute'])
+        # deduped_updates.reverse()  # 恢复原始顺序
+
+        deduped_updates_dict: Dict[str, Dict[str, Any]] = {}
+        for update in final_updates:
+            deduped_updates_dict[update['attribute']] = update
+        deduped_updates: List[Dict[str, Any]] = list(deduped_updates_dict.values())
+
+        final_result = {
+            **base_result,
+            'character_state': deduped_updates,
+            'extraUpdates': {
+                **extra_result,
+                'stateUpdates': used_extra_updates  # 使用过滤后的有效额外更新
+            }
+        }
+
+        return final_result
 
     def _should_break_response(self, response: str) -> bool:
         """检查是否需要中断响应生成"""
